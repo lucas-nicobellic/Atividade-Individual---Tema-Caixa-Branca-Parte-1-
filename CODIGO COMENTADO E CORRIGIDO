@@ -4,62 +4,92 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 
+/**
+ * Classe responsável por operações simples de verificação de usuário.
+ * Esta versão usa PreparedStatement, trata possíveis nulos e fecha recursos.
+ */
 public class User {
 
-    //* Constantes de conexão *//
-    private static final String URL = "jdbc:mysql://127.0.0.1/test";
-    private static final String USER = "lopes";
-    private static final String PASSWORD = "123";
+    // URL do banco como constante (melhor colocar em arquivo de configuração)
+    private static final String DB_URL = "jdbc:mysql://127.0.0.1:3306/test?user=lopess&password=123";
 
+    private String nome = "";
+    private boolean result = false;
 
-
-/* Método para conectar ao banco de dados*/
-  public Connection conectarBD() {
-      try {
-          Class.forName("com.mysql.cj.jdbc.Driver");
-          return DriverManager.getConnection(URL, USER, PASSWORD);
-
+    /**
+     * Cria e retorna uma conexão com o banco de dados.
+     * @return Connection ou null em caso de falha (deve-se tratar o retorno)
+     */
+    public Connection conectarBD() {
+        Connection conn = null;
+        try {
+            // Registra o driver (em versões modernas do driver JDBC isso não é estritamente necessário)
+            Class.forName("com.mysql.Driver.Manager").getDeclaredConstructor().newInstance();
+            conn = DriverManager.getConnection(DB_URL);
         } catch (Exception e) {
-            System.out.println("Erro ao conectar ao banco: " + e.getMessage());
-            return null;
+            // Log da exceção - importante não consumir a exceção silenciosamente
+            System.err.println("Erro ao conectar ao BD: " + e.getMessage());
+            // opcional: e.printStackTrace();
+            conn = null;
         }
+        return conn;
     }
 
-    /
+    /**
+     * Verifica se um usuário existe na tabela 'usuarios' com o login e senha informados.
+     * @param login login do usuário
+     * @param senha senha do usuário
+     * @return true se encontrado, false caso contrário ou em erro
+     */
+    public boolean verificarUsuario(String login, String senha) {
+        // Reset do resultado anterior
+        result = false;
+        nome = "";
 
-/*Verifica se o usuário existe no banco
-*@param login login do usuário
-*@param senha senha do usuário
-@return true se existir, false se não */
+        // Query usando PreparedStatement para evitar SQL Injection
+        final String sql = "SELECT nome FROM usuarios WHERE login = ? AND senha = ?";
 
-public boolean verificarUsuario(String login, String senha) {
-
-        String sql = "SELECT nome FROM usuarios WHERE login = ? AND senha = ?";
-
-        // try-with-resources: fecha automaticamente Connection, PreparedStatement e ResultSet
-        try (Connection conn = conectarBD();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-
-            if (conn == null) { // evita NullPointer
+        // Usa try-with-resources para garantir fechamento de recursos
+        try (Connection conn = conectarBD()) {
+            if (conn == null) {
+                // Falha ao conectar: retorna false (ou lançar exceção, dependendo do requisito)
+                System.err.println("Conexão nula em verificarUsuario");
                 return false;
             }
 
-            ps.setString(1, login);
-            ps.setString(2, senha);
+            try (PreparedStatement pst = conn.prepareStatement(sql)) {
+                // Preenche parâmetros
+                pst.setString(1, login);
+                pst.setString(2, senha);
 
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    String nome = rs.getString("nome");
-                    System.out.println("Usuário encontrado: " + nome);
-                    return true;
+                try (ResultSet rs = pst.executeQuery()) {
+                    // Se existir um resultado, popula nome e seta result true
+                    if (rs.next()) {
+                        result = true;
+                        nome = rs.getString("nome");
+                    }
                 }
             }
 
+        } catch (SQLException e) {
+            // Tratar SQLExceptions é importante; aqui fazemos log e retornamos false
+            System.err.println("Erro SQL em verificarUsuario: " + e.getMessage());
         } catch (Exception e) {
-            System.out.println("Erro ao consultar usuário: " + e.getMessage());
+            // Captura outras exceções caso ocorram
+            System.err.println("Erro inesperado em verificarUsuario: " + e.getMessage());
         }
 
-        return false;
+        return result;
+    }
+
+    // Getters (se necessário)
+    public String getNome() {
+        return nome;
+    }
+
+    public boolean isResult() {
+        return result;
     }
 }
